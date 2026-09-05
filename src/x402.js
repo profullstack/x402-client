@@ -41,10 +41,45 @@ export function evmChainId(network) {
   return match ? Number(match[1]) : null;
 }
 
-/** base64 (standard or url-safe) -> utf8. */
+/**
+ * base64 (standard or url-safe) -> utf8, and back.
+ *
+ * On `atob`/`btoa` and the text encoders rather than `Buffer`, because the
+ * four places this runs — Node, Bun, Deno and a browser — agree on those and
+ * not on `Buffer`.
+ */
 function fromBase64(s) {
   const clean = String(s).trim().replace(/-/g, '+').replace(/_/g, '/');
-  return Buffer.from(clean, 'base64').toString('utf8');
+  const bin = atob(clean);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new TextDecoder().decode(bytes);
+}
+
+function toBase64(text) {
+  const bytes = new TextEncoder().encode(text);
+  let bin = '';
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin);
+}
+
+/**
+ * The offer carried in a `PAYMENT-REQUIRED` header, or null.
+ *
+ * Shared by the adapters, which each see a response in their own library's
+ * shape and only have the raw header value in common.
+ *
+ * @param {string|null|undefined} header
+ * @returns {object|null}
+ */
+export function parseOfferHeader(header) {
+  if (!header) return null;
+  try {
+    const parsed = JSON.parse(fromBase64(header));
+    return isOffer(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -66,15 +101,8 @@ export async function readOffer(response) {
     body = text;
   }
 
-  const header = response.headers.get('payment-required');
-  if (header) {
-    try {
-      const parsed = JSON.parse(fromBase64(header));
-      if (isOffer(parsed)) return { offer: parsed, body };
-    } catch {
-      /* fall through to the body */
-    }
-  }
+  const fromHeader = parseOfferHeader(response.headers.get('payment-required'));
+  if (fromHeader) return { offer: fromHeader, body };
 
   return { offer: isOffer(body) ? body : null, body };
 }
@@ -232,7 +260,7 @@ export function signPayment(entry, wallet, options = {}) {
 
 /** base64 of a payment, as the proof headers carry it. */
 export function encodePaymentHeader(payment) {
-  return Buffer.from(JSON.stringify(payment), 'utf8').toString('base64');
+  return toBase64(JSON.stringify(payment));
 }
 
 /** Inverse of {@link encodePaymentHeader}. Null when the header is not base64 JSON. */

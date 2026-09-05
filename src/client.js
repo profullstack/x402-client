@@ -222,6 +222,9 @@ export function createClient(options = {}) {
     get address() {
       return wallet?.address ?? null;
     },
+    // The wallet signs and names itself and does nothing else; sharing it
+    // between clients (one per fetch implementation, say) leaks no key.
+    wallet,
     store,
     fetch: paidFetch,
     pay,
