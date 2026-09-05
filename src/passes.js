@@ -66,7 +66,7 @@ export function memoryStore() {
  * under `~/.config`.
  */
 export function defaultPassPath() {
-  const base = process.env.XDG_CONFIG_HOME || join(homedir(), '.config');
+  const base = globalThis.process?.env?.XDG_CONFIG_HOME || join(homedir(), '.config');
   return join(base, 'x402-client', 'passes.json');
 }
 

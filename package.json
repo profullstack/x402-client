@@ -1,8 +1,8 @@
 {
   "name": "@profullstack/x402-client",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
-  "description": "Pay an x402 402 from Node with a local key: sign the EIP-3009 authorization, retry with the proof, keep the pass. A fetch, a CLI, and the header that lets Lightpanda, Puppeteer or curl through a paid site.",
+  "description": "Pay x402 402s from JavaScript with a local key: a fetch, a CLI, and adapters for axios, got, Puppeteer and Playwright. Signs the EIP-3009 authorization, retries with the proof, keeps the pass. Node, Bun and Deno.",
   "keywords": [
     "x402",
     "402",
@@ -16,26 +16,81 @@
     "puppeteer",
     "headless",
     "agent",
-    "micropayment"
+    "micropayment",
+    "axios",
+    "got",
+    "playwright",
+    "fetch",
+    "undici",
+    "crawlee",
+    "scraper",
+    "bun",
+    "deno",
+    "paywall",
+    "bot"
   ],
-  "repository": { "type": "git", "url": "git+https://github.com/profullstack/x402-client.git" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/profullstack/x402-client.git"
+  },
   "homepage": "https://github.com/profullstack/x402-client#readme",
-  "bugs": { "url": "https://github.com/profullstack/x402-client/issues" },
+  "bugs": {
+    "url": "https://github.com/profullstack/x402-client/issues"
+  },
   "license": "MIT",
   "author": "Profullstack, LLC",
-  "bin": { "x402": "./bin/x402.js" },
+  "bin": {
+    "x402": "./bin/x402.js"
+  },
   "exports": {
-    ".": { "types": "./index.d.ts", "import": "./src/index.js" }
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./src/index.js"
+    },
+    "./fetch": {
+      "types": "./src/adapters/fetch.d.ts",
+      "import": "./src/adapters/fetch.js"
+    },
+    "./axios": {
+      "types": "./src/adapters/axios.d.ts",
+      "import": "./src/adapters/axios.js"
+    },
+    "./got": {
+      "types": "./src/adapters/got.d.ts",
+      "import": "./src/adapters/got.js"
+    },
+    "./puppeteer": {
+      "types": "./src/adapters/puppeteer.d.ts",
+      "import": "./src/adapters/puppeteer.js"
+    },
+    "./playwright": {
+      "types": "./src/adapters/playwright.d.ts",
+      "import": "./src/adapters/playwright.js"
+    }
   },
   "types": "./index.d.ts",
-  "files": ["src", "bin", "index.d.ts", "README.md", "LICENSE"],
-  "engines": { "node": ">=20.19" },
+  "files": [
+    "src",
+    "bin",
+    "index.d.ts",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20.19"
+  },
   "sideEffects": false,
   "scripts": {
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "test:bun": "bun test",
+    "test:deno": "deno test -A --no-check test/"
   },
   "dependencies": {
     "@noble/curves": "^2.4.0",
     "@noble/hashes": "^2.4.0"
+  },
+  "devDependencies": {
+    "axios": "1.20.0",
+    "got": "16.0.0"
   }
 }

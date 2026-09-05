@@ -113,6 +113,8 @@ export interface ClientOptions {
 export interface X402Client {
   /** The paying address, or null for a client without a key. */
   readonly address: string | null;
+  /** The wallet, or null. Signs and names itself; holds no readable key. */
+  readonly wallet: Wallet | null;
   readonly store: PassStore;
   /** fetch that presents a filed pass and pays a 402 once. */
   fetch(input: string | URL | Request, init?: RequestInit, options?: { pay?: boolean }): Promise<Response>;
