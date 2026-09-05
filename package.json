@@ -29,7 +29,7 @@
   },
   "types": "./index.d.ts",
   "files": ["src", "bin", "index.d.ts", "README.md", "LICENSE"],
-  "engines": { "node": ">=20.11" },
+  "engines": { "node": ">=20.19" },
   "sideEffects": false,
   "scripts": {
     "test": "node --test test/*.test.js"

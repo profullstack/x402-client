@@ -10,9 +10,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # fetch, Web Crypto and the noble packages' ESM entry points are the
-        # runtime surface; 20.11 is where they were all stable.
-        node: ["20.11", "22", "24"]
+        # The noble packages need Node 20.19 and pnpm 11 needs 22.13, so the
+        # matrix starts at 22; the package itself runs on 20.19+.
+        node: ["22", "24"]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
