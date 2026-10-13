@@ -21,6 +21,14 @@ A crawler, an agent, or a script that meets a paid site needs three things: to r
 | **Playwright** | `await attachX402(context, client)` | [Playwright](#playwright) |
 | **curl**, wget, HTTPie, Lightpanda's CLI, anything with a header flag | `-H "x-crawl-pass: $(x402 pass URL)"` | [CLI](#the-cli) |
 
+The `x402` CLI in one line (installs into `~/.local`, no sudo, fetches a private Node if you have no Node 20+):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/profullstack/x402-client/main/install.sh | sh
+```
+
+The library:
+
 ```
 npm install @profullstack/x402-client     # node
 bun add @profullstack/x402-client         # bun
@@ -168,7 +176,8 @@ Or connect Puppeteer or Playwright to `lightpanda serve` and use the adapter abo
 ## The CLI
 
 ```
-npm install -g @profullstack/x402-client          # or: npx / bunx / deno run -A npm:@profullstack/x402-client
+curl -fsSL https://raw.githubusercontent.com/profullstack/x402-client/main/install.sh | sh
+# remove: sh ~/.local/share/x402/uninstall.sh   (or: npx / bunx / deno run -A npm:@profullstack/x402-client)
 export X402_PRIVATE_KEY=0x…
 
 x402 address                       # fund this
