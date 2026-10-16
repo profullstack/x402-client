@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { ADDRESS_ONE, KEY_ONE, startGateway } from './helpers.js';
+import { ADDRESS_ONE, KEY_ONE, PAY_TO, startGateway } from './helpers.js';
 
 const BIN = fileURLToPath(new URL('../bin/x402.js', import.meta.url));
 
@@ -103,4 +103,27 @@ test('help and a bad command', async () => {
   assert.match(help.stdout, /usage: x402/);
   const bad = await run(['dance']);
   assert.equal(bad.code, 2);
+});
+
+test('--pay-to refuses a payee it does not name, and rejects a malformed address', async () => {
+  const gateway = await startGateway();
+  try {
+    const other = `0x${'8'.repeat(40)}`;
+    const refused = await run(['pay', `${gateway.url}/crawl`, '--pay-to', other], { X402_PRIVATE_KEY: KEY_ONE });
+    assert.equal(refused.code, 1);
+    assert.match(refused.stderr, /payTo does not allow/);
+
+    const fromEnv = await run(['pay', `${gateway.url}/crawl`], { X402_PRIVATE_KEY: KEY_ONE, X402_PAY_TO: other });
+    assert.equal(fromEnv.code, 1);
+    assert.equal(gateway.state.payments.length, 0);
+
+    const bad = await run(['pay', `${gateway.url}/crawl`, '--pay-to', 'nope'], { X402_PRIVATE_KEY: KEY_ONE });
+    assert.equal(bad.code, 2);
+
+    const paid = await run(['pay', `${gateway.url}/crawl`, '--pay-to', PAY_TO], { X402_PRIVATE_KEY: KEY_ONE });
+    assert.equal(paid.code, 0, paid.stderr);
+    assert.equal(gateway.state.payments.length, 1);
+  } finally {
+    await gateway.close();
+  }
 });

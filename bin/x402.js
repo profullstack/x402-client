@@ -34,6 +34,8 @@ commands
 options
   --key-file <path>    read the private key from a file (or set X402_PRIVATE_KEY)
   --max-usd <n>        refuse any single payment above this (default 5)
+  --pay-to <address>   only pay this address; repeatable (or set X402_PAY_TO, comma-separated)
+  --budget-usd <n>     refuse once this invocation would sign for more than this in total
   --network <caip2>    only pay on this network, e.g. eip155:8453; repeatable
   --store <path>       where passes are filed (default ~/.config/x402-client/passes.json)
   -H, --header <k: v>  extra request header; repeatable
@@ -42,7 +44,7 @@ options
 `;
 
 function parse(argv) {
-  const opts = { headers: [], networks: [], json: false };
+  const opts = { headers: [], networks: [], payTo: [], json: false };
   const rest = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -55,6 +57,8 @@ function parse(argv) {
     else if (a === '--key-file') opts.keyFile = next();
     else if (a === '--max-usd') opts.maxUsd = Number(next());
     else if (a === '--network') opts.networks.push(next());
+    else if (a === '--pay-to') opts.payTo.push(next());
+    else if (a === '--budget-usd') opts.budgetUsd = Number(next());
     else if (a === '--store') opts.store = next();
     else if (a === '-H' || a === '--header') opts.headers.push(next());
     else if (a.startsWith('-')) fail(`unknown option ${a}`);
@@ -71,6 +75,13 @@ function fail(message, code = 2) {
 function keyFrom(opts) {
   if (opts.keyFile) return readFileSync(opts.keyFile, 'utf8').trim();
   return process.env.X402_PRIVATE_KEY?.trim() || null;
+}
+
+function payToFrom(opts) {
+  const list = opts.payTo.length ? opts.payTo : (process.env.X402_PAY_TO ?? '').split(',');
+  const addresses = list.map((a) => a.trim()).filter(Boolean);
+  for (const a of addresses) if (!/^0x[0-9a-fA-F]{40}$/.test(a)) fail(`--pay-to must be a 0x address, got ${JSON.stringify(a)}`);
+  return addresses.length ? addresses : undefined;
 }
 
 function headersFrom(list) {
@@ -99,6 +110,8 @@ async function main() {
     key: key ?? undefined,
     store,
     maxUsd: Number.isFinite(opts.maxUsd) ? opts.maxUsd : undefined,
+    budgetUsd: Number.isFinite(opts.budgetUsd) ? opts.budgetUsd : undefined,
+    payTo: payToFrom(opts),
     networks: opts.networks.length ? opts.networks : undefined,
   });
 
