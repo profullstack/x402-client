@@ -94,7 +94,7 @@ jobs:
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          for _ in 1 2 3 4 5; do
+          for _ in $(seq 36); do
             if [ "$(npm view "@profullstack/x402-client@$VERSION" version 2>/dev/null)" = "$VERSION" ]; then
               echo "@profullstack/x402-client@$VERSION is on the registry"
               exit 0
