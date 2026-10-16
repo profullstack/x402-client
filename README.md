@@ -72,6 +72,8 @@ client.passFor(url);    // the live pass filed for that site, or null
 createClient({
   key,                       // 32-byte secp256k1 private key, hex. Or `wallet`.
   maxUsd: 5,                 // refuse any single payment above this. Default 5.
+  payTo: '0x…',              // only sign for this payee (or a list, or { origin: payee, '*': payee })
+  budgetUsd: 20,             // refuse once everything this client signed would pass this. Default unlimited.
   networks: ['eip155:8453'], // only pay on these chains, e.g. the one you funded
   store: 'file',             // file passes in ~/.config/x402-client/passes.json; default memory
   userAgent: 'MyBot/1.0 (+https://…)',
@@ -81,6 +83,15 @@ createClient({
 ```
 
 The ceiling is the one setting to think about. A client that holds a key and pays whatever it is asked is a client a hostile server can drain by asking. A day of crawling on a gateway costs a dollar; five is room for a dearer site and not for a mistake. Buying a week at once is `?days=7` on the sales page and `maxUsd: 7`.
+
+The ceiling bounds the price, not the payee. The offer names where the money goes, so a base URL that is mistyped or injected, a server that is taken over, or a forged DNS answer can name an attacker's address and be paid up to `maxUsd` on every call. If you know who you pay, say so:
+
+```js
+createClient({ key, payTo: '0xCC3b…41E5' });                     // one payee, any site
+createClient({ key, payTo: { 'https://site.example': '0xCC3b…41E5', '*': '0x…' } }); // per origin
+```
+
+An offer for any other address fails with `payee-mismatch` before anything is signed; in a mixed offer the pinned option is chosen even when it is not first. An origin a map does not name, with no `'*'`, pays nobody. `budgetUsd` bounds a loop of payments the way `maxUsd` bounds one: it counts every authorization the client signs, settled or not, because a signed authorization is spendable by whoever holds it; `client.spentUsd` is the running total.
 
 `networks` matters because the server's `accepts` is in its order of preference, and the first entry may be a chain your wallet has no USDC on. A signed authorization on an empty wallet verifies and then fails to settle, and the server answers 402 as if you had never paid.
 
@@ -183,6 +194,8 @@ export X402_PRIVATE_KEY=0x…
 x402 address                       # fund this
 x402 pay https://site/crawl        # receipt as JSON
 x402 pay "https://site/crawl?days=7" --max-usd 7
+x402 pay https://site/crawl --pay-to 0x…   # refuse any other payee (or X402_PAY_TO=0x…,0x…)
+x402 fetch https://site/page --budget-usd 3
 x402 pass https://site/crawl       # the pass, buying one if none is on file
 x402 fetch https://site/page       # the page, paying if it asks
 x402 passes                        # what is on file
@@ -229,6 +242,8 @@ The signer is a port of the one in CoinPay Wallet, which was checked byte for by
 | `no-offer` | the URL answered 402 with no x402 in it, or did not answer 402 |
 | `no-option` | nothing in `accepts` is `exact` on an EVM chain in `networks` |
 | `too-expensive` | over `maxUsd`, or a token this client cannot price |
+| `payee-mismatch` | the offer pays an address `payTo` does not allow; nothing was signed |
+| `over-budget` | paying would take the total past `budgetUsd`; nothing was signed |
 | `rejected` | the server refused the proof; `body` has its reason |
 
 ## Selling, not buying?

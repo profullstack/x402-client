@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 
 import { createClient, fileStore, isLive, memoryStore, X402Error } from '../src/index.js';
-import { ADDRESS_ONE, KEY_ONE, PAY_TO, startGateway } from './helpers.js';
+import { ADDRESS_ONE, KEY_ONE, offerFor, PAY_TO, startGateway } from './helpers.js';
 
 test('a 402 is paid once, and the pass opens every request after it', async () => {
   const gateway = await startGateway();
@@ -234,6 +234,101 @@ test('a user agent is sent when the caller sets none', async () => {
     for (const hit of gateway.state.hits) assert.equal(hit.headers['user-agent'], 'MyCrawler/1.0 (+https://example.test)');
     await client.fetch(`${gateway.url}/page`, { headers: { 'user-agent': 'Other/2' } });
     assert.equal(gateway.state.hits.at(-1).headers['user-agent'], 'Other/2');
+  } finally {
+    await gateway.close();
+  }
+});
+
+const ATTACKER = '0x9999999999999999999999999999999999999999';
+
+test('payTo refuses an offer naming another payee before anything is signed', async () => {
+  const gateway = await startGateway();
+  try {
+    const signed = [];
+    const inner = createClient({ key: KEY_ONE }).wallet;
+    const wallet = { address: inner.address, signTypedData: (...a) => (signed.push(a), inner.signTypedData(...a)) };
+    const client = createClient({ wallet, payTo: ATTACKER.replace(/9/g, '8') });
+    await assert.rejects(client.pay(`${gateway.url}/crawl`), (err) => {
+      assert.ok(err instanceof X402Error);
+      assert.equal(err.code, 'payee-mismatch');
+      assert.match(err.message, new RegExp(PAY_TO));
+      return true;
+    });
+    assert.equal(signed.length, 0, 'nothing may be signed for an unpinned payee');
+    assert.equal(gateway.state.payments.length, 0);
+    assert.equal(client.spentUsd, 0);
+  } finally {
+    await gateway.close();
+  }
+});
+
+test('payTo pays the pinned payee, in any letter case', async () => {
+  const gateway = await startGateway();
+  try {
+    const client = createClient({ key: KEY_ONE, payTo: [ATTACKER.replace(/9/g, '8'), PAY_TO.toLowerCase()] });
+    const result = await client.pay(`${gateway.url}/crawl`);
+    assert.equal(result.payTo, PAY_TO);
+    assert.equal(gateway.state.payments.length, 1);
+  } finally {
+    await gateway.close();
+  }
+});
+
+test('payTo picks the pinned option out of a mixed offer, not the first one', async () => {
+  const gateway = await startGateway();
+  try {
+    const offer = offerFor(`${gateway.url}/crawl`);
+    offer.accepts[0].payTo = ATTACKER;
+    const client = createClient({ key: KEY_ONE, payTo: PAY_TO });
+    const result = await client.pay(`${gateway.url}/crawl`, { offer });
+    assert.equal(result.payTo, PAY_TO);
+    assert.equal(result.network, 'eip155:137');
+  } finally {
+    await gateway.close();
+  }
+});
+
+test('payTo by origin: the named origin pays its payee, an unnamed one pays nobody', async () => {
+  const gateway = await startGateway();
+  try {
+    const pinned = createClient({ key: KEY_ONE, payTo: { [gateway.url]: PAY_TO } });
+    assert.equal((await pinned.pay(`${gateway.url}/crawl`)).payTo, PAY_TO);
+
+    const elsewhere = createClient({ key: KEY_ONE, payTo: { 'https://other.example': PAY_TO } });
+    await assert.rejects(elsewhere.pay(`${gateway.url}/crawl`), { code: 'payee-mismatch' });
+
+    const fallback = createClient({ key: KEY_ONE, payTo: { 'https://other.example': ATTACKER, '*': PAY_TO } });
+    assert.equal((await fallback.pay(`${gateway.url}/crawl`)).payTo, PAY_TO);
+  } finally {
+    await gateway.close();
+  }
+});
+
+test('payTo refusal reaches fetch() callers too', async () => {
+  const gateway = await startGateway();
+  try {
+    const client = createClient({ key: KEY_ONE, payTo: ATTACKER });
+    await assert.rejects(client.fetch(`${gateway.url}/page`), { code: 'payee-mismatch' });
+    assert.equal(gateway.state.payments.length, 0);
+  } finally {
+    await gateway.close();
+  }
+});
+
+test('budgetUsd bounds the total signed, across payments', async () => {
+  const gateway = await startGateway({ mode: 'resource' });
+  try {
+    const client = createClient({ key: KEY_ONE, budgetUsd: 2.5 });
+    await client.pay(`${gateway.url}/a`);
+    await client.pay(`${gateway.url}/b`);
+    assert.equal(client.spentUsd, 2);
+    await assert.rejects(client.pay(`${gateway.url}/c`), (err) => {
+      assert.equal(err.code, 'over-budget');
+      assert.match(err.message, /\$2\.00 of the \$2\.5 budget/);
+      return true;
+    });
+    assert.equal(gateway.state.payments.length, 2);
+    assert.equal(client.spentUsd, 2);
   } finally {
     await gateway.close();
   }

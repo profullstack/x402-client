@@ -100,6 +100,14 @@ export interface ClientOptions {
   networks?: string[];
   /** Refuse any single payment above this many dollars. Default 5. */
   maxUsd?: number;
+  /**
+   * Only sign for these payees. An address, a list, or a map from origin to
+   * either, with '*' as the fallback; an origin the map does not cover allows
+   * nobody. Default: whatever the offer names.
+   */
+  payTo?: string | string[] | Record<string, string | string[]>;
+  /** Refuse once the total signed by this client would pass this many dollars. Default unlimited. */
+  budgetUsd?: number;
   /** How long a signed authorization stays valid; defaults to the offer's maxTimeoutSeconds, else 600. */
   validForSeconds?: number;
   /** A User-Agent to send when the caller sets none. */
@@ -116,6 +124,8 @@ export interface X402Client {
   /** The wallet, or null. Signs and names itself; holds no readable key. */
   readonly wallet: Wallet | null;
   readonly store: PassStore;
+  /** Dollars this client has signed authorizations for, counted against budgetUsd. */
+  readonly spentUsd: number;
   /** fetch that presents a filed pass and pays a 402 once. */
   fetch(input: string | URL | Request, init?: RequestInit, options?: { pay?: boolean }): Promise<Response>;
   /** Pay for a URL (asking it for the offer first unless one is given) and file any pass. */
@@ -124,7 +134,7 @@ export interface X402Client {
   passFor(url: string | URL): StoredPass | null;
 }
 
-export type X402ErrorCode = 'no-key' | 'no-offer' | 'no-option' | 'too-expensive' | 'rejected';
+export type X402ErrorCode = 'no-key' | 'no-offer' | 'no-option' | 'too-expensive' | 'payee-mismatch' | 'over-budget' | 'rejected';
 
 export class X402Error extends Error {
   code: X402ErrorCode | string;

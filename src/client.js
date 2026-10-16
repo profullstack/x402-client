@@ -20,6 +20,13 @@
  * one would be spending on a guess. And it never pays more than `maxUsd`,
  * which defaults low enough that a misconfigured server or a hostile one
  * cannot drain a wallet by asking.
+ *
+ * Two opt-in settings close what the ceiling leaves open. The offer names
+ * the payee, so a base URL that is wrong, a server that is taken over, or a
+ * DNS answer that is forged can name the attacker's address and be paid up
+ * to `maxUsd` per call: `payTo` pins the addresses this client will sign
+ * for, and refuses before signing. And `maxUsd` bounds one payment, not a
+ * loop of them: `budgetUsd` bounds everything the client signs.
  */
 
 import { fileStore, memoryStore, originOf } from './passes.js';
@@ -31,7 +38,9 @@ import { amountUsd, readOffer, readReceipt, selectAccept, signPayment } from './
  *
  * `code` is one of `no-key` (nothing to sign with), `no-offer` (402 without
  * x402 in it), `no-option` (nothing signable in the offer), `too-expensive`
- * (over `maxUsd`, or unpriceable), `rejected` (the server refused the proof).
+ * (over `maxUsd`, or unpriceable), `payee-mismatch` (the offer pays an
+ * address `payTo` does not allow), `over-budget` (it would take the total
+ * past `budgetUsd`), `rejected` (the server refused the proof).
  */
 export class X402Error extends Error {
   /**
@@ -54,6 +63,28 @@ export class X402Error extends Error {
 export const DEFAULT_MAX_USD = 5;
 
 /**
+ * The payees allowed for a URL, lowercased, or null when any is.
+ *
+ * `payTo` is an address, a list of them, or a map from origin to either,
+ * where `'*'` is the fallback for origins the map does not name. An origin
+ * the map does not name and no `'*'` covers allows nobody: a pin that
+ * silently opened for a site nobody thought of would not be a pin.
+ *
+ * @param {import('../index.d.ts').ClientOptions['payTo']} payTo
+ * @returns {(url: string) => Set<string>|null}
+ */
+function payeesFor(payTo) {
+  if (payTo === undefined || payTo === null) return () => null;
+  const set = (v) => new Set((Array.isArray(v) ? v : [v]).map((a) => String(a).toLowerCase()));
+  if (typeof payTo === 'string' || Array.isArray(payTo)) {
+    const all = set(payTo);
+    return () => all;
+  }
+  const byOrigin = new Map(Object.entries(payTo).map(([k, v]) => [k === '*' ? '*' : originOf(k), set(v)]));
+  return (url) => byOrigin.get(originOf(url)) ?? byOrigin.get('*') ?? new Set();
+}
+
+/**
  * @param {import('../index.d.ts').ClientOptions} [options]
  * @returns {import('../index.d.ts').X402Client}
  */
@@ -62,6 +93,7 @@ export function createClient(options = {}) {
     key,
     networks,
     maxUsd = DEFAULT_MAX_USD,
+    budgetUsd = Infinity,
     validForSeconds,
     userAgent,
     fetch: f = globalThis.fetch,
@@ -69,6 +101,10 @@ export function createClient(options = {}) {
 
   const wallet = options.wallet ?? (key ? walletFromKey(key) : null);
   const store = options.store === 'file' ? fileStore() : (options.store ?? memoryStore());
+  const allowedPayees = payeesFor(options.payTo);
+  // Counted when an authorization is signed, not when it settles: a signed
+  // authorization is spendable by whoever holds it, whatever the server says.
+  let spentUsd = 0;
 
   const baseHeaders = (init) => {
     const headers = new Headers(init?.headers ?? {});
@@ -108,8 +144,18 @@ export function createClient(options = {}) {
       }
     }
 
-    const entry = selectAccept(offer.accepts, { networks });
+    const payees = allowedPayees(target);
+    const signable = Array.isArray(offer.accepts) ? offer.accepts : [];
+    const pinned = payees ? signable.filter((a) => payees.has(String(a?.payTo ?? '').toLowerCase())) : signable;
+    const entry = selectAccept(pinned, { networks });
     if (!entry) {
+      if (payees && selectAccept(signable, { networks })) {
+        const named = [...new Set(signable.map((a) => a?.payTo).filter(Boolean))].join(', ') || 'nobody';
+        throw new X402Error('payee-mismatch', `Refusing to pay ${named} for ${target}; payTo does not allow that address`, {
+          offer,
+          url: target,
+        });
+      }
       const offered = (offer.accepts ?? []).map((a) => a?.network).filter(Boolean).join(', ') || 'nothing';
       throw new X402Error('no-option', `The offer has no option this wallet can sign (offered: ${offered})`, { offer, url: target });
     }
@@ -123,7 +169,16 @@ export function createClient(options = {}) {
       });
     }
 
+    if (spentUsd + usd > budgetUsd) {
+      throw new X402Error(
+        'over-budget',
+        `Refusing to pay $${usd.toFixed(2)} for ${target}; $${spentUsd.toFixed(2)} of the $${budgetUsd} budget (budgetUsd) is spent`,
+        { offer, url: target },
+      );
+    }
+
     const { header, authorization, payment } = signPayment(entry, wallet, { validForSeconds });
+    spentUsd += usd;
 
     const headers = baseHeaders(init);
     // CoinPay's dialect reads the v1 name; v2 facilitators read the other.
@@ -226,6 +281,9 @@ export function createClient(options = {}) {
     // between clients (one per fetch implementation, say) leaks no key.
     wallet,
     store,
+    get spentUsd() {
+      return spentUsd;
+    },
     fetch: paidFetch,
     pay,
     passFor,

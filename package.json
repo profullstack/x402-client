@@ -1,6 +1,6 @@
 {
   "name": "@profullstack/x402-client",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "description": "Pay x402 402s from JavaScript with a local key: a fetch, a CLI, and adapters for axios, got, Puppeteer and Playwright. Signs the EIP-3009 authorization, retries with the proof, keeps the pass. Node, Bun and Deno.",
   "keywords": [
