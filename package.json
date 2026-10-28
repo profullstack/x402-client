@@ -1,6 +1,6 @@
 {
   "name": "@profullstack/x402-client",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "type": "module",
   "description": "Pay x402 402s from JavaScript with a local key: a fetch, a CLI, and adapters for axios, got, Puppeteer and Playwright. Signs the EIP-3009 authorization, retries with the proof, keeps the pass. Optional sealed key: pays only while an operator has unlocked it. Node, Bun and Deno.",
   "keywords": [
@@ -45,31 +45,38 @@
   "exports": {
     ".": {
       "types": "./index.d.ts",
-      "import": "./src/index.js"
+      "import": "./src/index.js",
+      "default": "./src/index.js"
     },
     "./fetch": {
       "types": "./src/adapters/fetch.d.ts",
-      "import": "./src/adapters/fetch.js"
+      "import": "./src/adapters/fetch.js",
+      "default": "./src/adapters/fetch.js"
     },
     "./axios": {
       "types": "./src/adapters/axios.d.ts",
-      "import": "./src/adapters/axios.js"
+      "import": "./src/adapters/axios.js",
+      "default": "./src/adapters/axios.js"
     },
     "./got": {
       "types": "./src/adapters/got.d.ts",
-      "import": "./src/adapters/got.js"
+      "import": "./src/adapters/got.js",
+      "default": "./src/adapters/got.js"
     },
     "./puppeteer": {
       "types": "./src/adapters/puppeteer.d.ts",
-      "import": "./src/adapters/puppeteer.js"
+      "import": "./src/adapters/puppeteer.js",
+      "default": "./src/adapters/puppeteer.js"
     },
     "./playwright": {
       "types": "./src/adapters/playwright.d.ts",
-      "import": "./src/adapters/playwright.js"
+      "import": "./src/adapters/playwright.js",
+      "default": "./src/adapters/playwright.js"
     },
     "./sealed": {
       "types": "./src/sealed.d.ts",
-      "import": "./src/sealed.js"
+      "import": "./src/sealed.js",
+      "default": "./src/sealed.js"
     }
   },
   "types": "./index.d.ts",
