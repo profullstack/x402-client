@@ -7,6 +7,10 @@
  *   x402 fetch <url>        fetch a URL, paying if it asks, print the body
  *   x402 address            the address the key controls, to fund it
  *   x402 passes             the passes on file
+ *   x402 vault seal         seal a key under a passphrase -> X402_SEALED_KEY
+ *   x402 vault unlock <url> unlock a running sealed payer (default 7d)
+ *   x402 vault lock <url>   lock it again
+ *   x402 vault status <url> locked or unlocked, and until when
  *
  * The key comes from `X402_PRIVATE_KEY` or `--key-file <path>`, never from an
  * argument: a key on the command line is in every process list and shell
@@ -21,6 +25,7 @@ import { readFileSync } from 'node:fs';
 
 import { createClient, X402Error } from '../src/client.js';
 import { fileStore, originOf } from '../src/passes.js';
+import { DEFAULT_UNLOCK_TTL, deriveDataKey, sealPayerKey } from '../src/sealed.js';
 
 const HELP = `usage: x402 <command> [options]
 
@@ -31,6 +36,13 @@ commands
   address          print the address the key controls
   passes           list the passes on file
 
+  vault seal                 seal the key (prompted, or --key-file) under a passphrase;
+                             prints X402_SEALED_KEY=<ciphertext> and a one-time recovery key
+  vault unlock <url>...      unlock running sealed payers (their loopback control ports,
+                             e.g. http://127.0.0.1:3921); one passphrase prompt for all
+  vault lock <url>...        lock them (payments pause)
+  vault status <url>...      show locked/unlocked and the expiry
+
 options
   --key-file <path>    read the private key from a file (or set X402_PRIVATE_KEY)
   --max-usd <n>        refuse any single payment above this (default 5)
@@ -40,6 +52,7 @@ options
   --store <path>       where passes are filed (default ~/.config/x402-client/passes.json)
   -H, --header <k: v>  extra request header; repeatable
   --json               print machine-readable output for pass and fetch
+  --ttl <8h|7d>        how long an unlock lasts (default 7d, at most 7d)
   -h, --help           this
 `;
 
@@ -60,6 +73,7 @@ function parse(argv) {
     else if (a === '--pay-to') opts.payTo.push(next());
     else if (a === '--budget-usd') opts.budgetUsd = Number(next());
     else if (a === '--store') opts.store = next();
+    else if (a === '--ttl') opts.ttl = next();
     else if (a === '-H' || a === '--header') opts.headers.push(next());
     else if (a.startsWith('-')) fail(`unknown option ${a}`);
     else rest.push(a);
@@ -94,12 +108,111 @@ function headersFrom(list) {
   return headers;
 }
 
+/**
+ * Read secrets: from a TTY with echo off, else one line each from stdin (for
+ * scripts and tests). Never from argv or the environment.
+ */
+function makePrompter() {
+  let lines = null;
+  const piped = async () => {
+    if (!lines) {
+      let all = '';
+      for await (const chunk of process.stdin) all += chunk;
+      lines = all.split(/\r?\n/);
+    }
+    return lines.shift() ?? '';
+  };
+  return async (label) => {
+    if (!process.stdin.isTTY) return piped();
+    const { createInterface } = await import('node:readline');
+    const rl = createInterface({ input: process.stdin, output: process.stderr, terminal: true });
+    let muted = false;
+    rl._writeToOutput = (s) => {
+      if (!muted) process.stderr.write(s);
+    };
+    return new Promise((resolve) => {
+      rl.question(label, (answer) => {
+        rl.close();
+        process.stderr.write('\n');
+        resolve(answer);
+      });
+      muted = true;
+    });
+  };
+}
+
+async function vault(sub, args, opts) {
+  const ask = makePrompter();
+  if (sub === 'seal') {
+    const key = opts.keyFile ? readFileSync(opts.keyFile, 'utf8').trim() : (await ask('private key (hex): ')).trim();
+    if (!key) fail('no key to seal');
+    const pass = await ask('new passphrase (10+ chars): ');
+    const again = await ask('repeat passphrase: ');
+    if (pass !== again) fail('the passphrases differ');
+    const { sealed, address, recoveryKey } = await sealPayerKey(key, pass);
+    process.stderr.write(`sealed the key for ${address}\nrecovery key (shown once, keep it offline): ${recoveryKey}\n`);
+    process.stdout.write(`X402_SEALED_KEY=${sealed}\n`);
+    return;
+  }
+  if (!['unlock', 'lock', 'status'].includes(sub)) fail(`unknown vault command ${sub ?? ''}\n\n${HELP}`);
+  if (args.length === 0) fail(`vault ${sub} needs the control URL of at least one running payer`);
+  const urls = args.map((u) => u.replace(/\/+$/, ''));
+  const states = [];
+  for (const url of urls) {
+    const res = await fetch(url).catch((e) => fail(`${url}: ${e.message}`, 1));
+    if (!res.ok) fail(`${url} answered ${res.status}`, 1);
+    states.push(await res.json());
+  }
+  if (sub === 'status') {
+    for (const [i, s] of states.entries()) {
+      process.stdout.write(`${urls[i]}\t${s.site}\t${s.address}\t${s.unlocked ? `unlocked until ${s.expiresAt}` : 'locked'}\n`);
+    }
+    return;
+  }
+  const pass = await ask('passphrase: ');
+  let failed = false;
+  // One derivation per distinct seal (they are normally all the same one).
+  const keys = new Map();
+  for (const [i, s] of states.entries()) {
+    const id = JSON.stringify(s.seal?.kdf ?? null);
+    if (!keys.has(id)) {
+      try {
+        const dek = await deriveDataKey(s.seal, pass);
+        keys.set(id, Buffer.from(dek).toString('base64'));
+        dek.fill(0);
+      } catch {
+        keys.set(id, null);
+      }
+    }
+    const dek = keys.get(id);
+    if (!dek) {
+      process.stderr.write(`${urls[i]}: that passphrase does not open this sealed key\n`);
+      failed = true;
+      continue;
+    }
+    const res = await fetch(`${urls[i]}/${sub}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(sub === 'unlock' ? { dek, ttl: opts.ttl ?? DEFAULT_UNLOCK_TTL } : { dek }),
+    });
+    const out = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      process.stderr.write(`${urls[i]}: ${out.error ?? res.status}\n`);
+      failed = true;
+      continue;
+    }
+    process.stdout.write(`${urls[i]}\t${out.site}\t${out.unlocked ? `unlocked until ${out.expiresAt}` : 'locked'}\n`);
+  }
+  if (failed) process.exit(1);
+}
+
 async function main() {
   const { opts, command, args } = parse(process.argv.slice(2));
   if (opts.help || !command) {
     process.stdout.write(HELP);
     process.exit(opts.help ? 0 : 2);
   }
+  if (command === 'vault') return vault(args[0], args.slice(1), opts);
 
   const store = fileStore(opts.store);
   const key = keyFrom(opts);

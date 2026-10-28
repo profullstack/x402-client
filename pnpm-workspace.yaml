@@ -1,0 +1,3 @@
+# pnpm 11 refuses packages younger than a day; our own house package is exempt.
+minimumReleaseAgeExclude:
+  - "@profullstack/sealed-secrets"

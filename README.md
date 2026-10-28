@@ -209,6 +209,41 @@ wget  --header="x-crawl-pass: $(x402 pass https://site/crawl)" https://site/page
 http  https://site/page "x-crawl-pass:$(x402 pass https://site/crawl)"
 ```
 
+## A sealed key (for servers)
+
+A crawler that pays needs its key around the clock, and a key in an env file is readable by
+anyone with root on the box. `@profullstack/x402-client/sealed` keeps it sealed instead and
+pays only while an operator has unlocked it.
+
+```sh
+x402 vault seal                      # prompts for the key and a passphrase
+# -> X402_SEALED_KEY=<ciphertext>     put this in the app env, remove X402_PRIVATE_KEY
+# -> a recovery key, shown once
+```
+
+```js
+import { payerFromEnv } from '@profullstack/x402-client/sealed';
+
+// X402_SEALED_KEY -> sealed payer (control server on X402_UNLOCK_PORT)
+// else X402_PRIVATE_KEY -> plaintext payer + a [warn] line (until X402_LEGACY_PLAINTEXT_KEY=off)
+const payer = payerFromEnv({ site: 'example.com', env: process.env, clientOptions: { maxUsd: 5 } });
+const paidFetch = payer ? payer.fetch : fetch;
+```
+
+```sh
+x402 vault unlock http://127.0.0.1:3921 http://127.0.0.1:3922 --ttl 7d   # one prompt for all
+x402 vault status http://127.0.0.1:3921
+x402 vault lock   http://127.0.0.1:3921
+```
+
+The CLI derives the data key from the passphrase on your machine and sends only that key; the
+process keeps it in memory (7 days by default, 7 at most) and unseals the private key just
+before each payment. A restart, a lock or the TTL forgets it. While locked, payments pause and
+nothing else does: the fetch is the plain fetch (a 402 comes back as a 402, passes on file are
+still presented) and one `[alert] <site>: operator keys locked, unlock to resume` line is logged
+per lock. Publish the control port on loopback only. Lost passphrase and recovery key: seal the
+key again.
+
 ## Runtimes
 
 Tested in CI on every push:
