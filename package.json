@@ -1,8 +1,8 @@
 {
   "name": "@profullstack/x402-client",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "type": "module",
-  "description": "Pay x402 402s from JavaScript with a local key: a fetch, a CLI, and adapters for axios, got, Puppeteer and Playwright. Signs the EIP-3009 authorization, retries with the proof, keeps the pass. Node, Bun and Deno.",
+  "description": "Pay x402 402s from JavaScript with a local key: a fetch, a CLI, and adapters for axios, got, Puppeteer and Playwright. Signs the EIP-3009 authorization, retries with the proof, keeps the pass. Optional sealed key: pays only while an operator has unlocked it. Node, Bun and Deno.",
   "keywords": [
     "x402",
     "402",
@@ -66,6 +66,10 @@
     "./playwright": {
       "types": "./src/adapters/playwright.d.ts",
       "import": "./src/adapters/playwright.js"
+    },
+    "./sealed": {
+      "types": "./src/sealed.d.ts",
+      "import": "./src/sealed.js"
     }
   },
   "types": "./index.d.ts",
@@ -87,7 +91,8 @@
   },
   "dependencies": {
     "@noble/curves": "^2.4.0",
-    "@noble/hashes": "^2.4.0"
+    "@noble/hashes": "^2.4.0",
+    "@profullstack/sealed-secrets": "^0.1.0"
   },
   "devDependencies": {
     "axios": "1.20.0",
